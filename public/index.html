@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>色覚シミュレーション（Machado 2009 ベース）</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 16px;
+      line-height: 1.6;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 0.75rem;
+    }
+    .controls {
+      margin-bottom: 1rem;
+    }
+    .controls button,
+    .controls input[type="file"] {
+      margin-right: 8px;
+    }
+    .note {
+      font-size: 0.85rem;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+    .severity {
+      margin-top: 0.75rem;
+    }
+    .severity input[type="range"] {
+      width: 260px;
+      vertical-align: middle;
+    }
+
+    /* info（折り畳みパネル） */
+    .info {
+      margin-top: 1.5rem;
+      margin-bottom: 1.5rem;
+      padding: 12px;
+      border-radius: 6px;
+      background: #f5f5f5;
+      font-size: 0.9rem;
+      border: 1px solid #e0e0e0;
+    }
+    .info > summary {
+      cursor: pointer;
+      list-style: none;
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
+      outline: none;
+    }
+    /* Safari 等で summary のデフォルトマーカーを消す */
+    .info > summary::-webkit-details-marker {
+      display: none;
+    }
+    /* summary 横に擬似的な「▼ / ▶」マーカー */
+    .info > summary::before {
+      content: "▼ ";
+      font-size: 0.9rem;
+    }
+    .info:not([open]) > summary::before {
+      content: "▶ ";
+    }
+    .info-content {
+      margin-top: 0.5rem;
+    }
+    .info-content h3 {
+      font-size: 1rem;
+      margin: 0.75rem 0 0.25rem;
+    }
+    .info-content p,
+    .info-content ol,
+    .info-content ul {
+      margin: 0.25rem 0;
+      padding-left: 1.2rem;
+    }
+    .info-content p {
+      padding-left: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .panel {
+      border: 1px solid #ccc;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .panel h2 {
+      font-size: 1rem;
+      margin: 0 0 4px;
+    }
+    canvas {
+      max-width: 100%;
+      height: auto;
+      background: #eee;
+    }
+    .footer {
+      margin-top: 2rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid #ddd;
+      font-size: 0.75rem;
+      color: #666;
+    }
+    .footer a {
+      color: inherit;
+      text-decoration: underline;
+    }
+
+    /* スマホ用レイアウト調整 */
+    @media (max-width: 600px) {
+      body {
+        margin: 8px;
+        font-size: 15px;
+      }
+      h1 {
+        font-size: 1.2rem;
+        line-height: 1.4;
+      }
+
+      .controls {
+        margin-bottom: 0.75rem;
+      }
+
+      .controls button,
+      .controls label {
+        display: block;
+        margin-right: 0;
+        margin-bottom: 0.5rem;
+      }
+
+      .severity input[type="range"] {
+        width: 100%;
+      }
+
+      .info {
+        padding: 10px;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .panel {
+        padding: 6px;
+      }
+
+      .footer {
+        margin-top: 1.5rem;
+        font-size: 0.7rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>色覚シミュレーション（Machado 2009 ベース CVD モデル）</h1>
+
+  <div class="controls">
+    <button id="paste-btn">📋 クリップボードから画像を貼り付け</button>
+    <label>
+      or ファイルを選択:
+      <input type="file" id="file-input" accept="image/*">
+    </label>
+
+    <div class="note">
+      ・ご利用のブラウザや環境によっては、クリップボードからの貼り付けが使えないことがあります。<br>
+      ・その場合は「ファイルを選択」から画像を読み込んでください。<br>
+      ・グラフや画面キャプチャなどを読み込むと、「色に頼らない情報の伝え方」を考えるヒントになります。
+    </div>
+
+    <div class="severity">
+      <label for="severity-range">
+        severity:
+        <span id="severity-value">1.00</span>
+      </label>
+      <input
+        type="range"
+        id="severity-range"
+        min="0"
+        max="1"
+        step="0.01"
+        value="1"
+      >
+      <div class="note">
+        0 に近いほど元の画像に近い色、1 に近いほど各タイプの色の特徴を強くシミュレートします。<br>
+        実際の見え方は人によってちがうため、「だいたいの傾向を知るための目安」として使ってください。
+      </div>
+    </div>
+  </div>
+
+  <!-- 折り畳み可能な info ブロック -->
+  <details class="info" open>
+    <summary>このツールについて</summary>
+    <div class="info-content">
+      <p>
+        このページでは、画像の「色の見え方のちがい」をシミュレートできます。<br>
+        Protan / Deutan / Tritan は、色の感じ方に関するいくつかのタイプをモデル化したものです。
+        実際の見え方には、個人差があることにご注意ください。
+      </p>
+
+      <h3>使い方</h3>
+      <ol>
+        <li>クリップボードに画像をコピーするか、「ファイルを選択」から画像ファイルを選びます。</li>
+        <li>読み込むと、左上の「オリジナル」に元の画像が表示されます。</li>
+        <li>スライダー（severity）を動かすと、Protan / Deutan / Tritan 各パネルの見え方が変わります。</li>
+      </ol>
+
+      <h3>見え方について</h3>
+      <ul>
+        <li>このシミュレーションは、研究に基づくモデルを使った「一例」です。</li>
+        <li>実際のすべての人の見え方と完全に一致するものではありません。</li>
+        <li>医療的な診断や判定を行うことを目的としたものではありません。</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>オリジナル</h2>
+      <canvas id="canvas-original"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Protan（1型）</h2>
+      <canvas id="canvas-protan"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Deutan（2型）</h2>
+      <canvas id="canvas-deutan"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Tritan（3型）</h2>
+      <canvas id="canvas-tritan"></canvas>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <small>
+      色覚シミュレーションは、G. M. Machado らによるモデル
+      “A Physiologically-based Model for Simulation of Color Vision Deficiency” (2009) と、
+      Python ライブラリ
+      <a href="https://www.colour-science.org/" target="_blank" rel="noreferrer">Colour</a>
+      の CVD_MATRICES_MACHADO2010（BSD-3-Clause）に基づいています。<br>
+      Colour は BSD-3-Clause ライセンスで公開されています。
+    </small>
+  </footer>
+
+  <script src="js/color-sim.js"></script>
+  <script src="js/main.js"></script>
+
+  <!-- 画面幅に応じて info の開閉状態を初期化 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const info = document.querySelector('.info');
+      if (!info) return;
+
+      // スマホ幅ならデフォルト閉じる、PC幅なら開く
+      if (window.innerWidth <= 600) {
+        info.removeAttribute('open');
+      } else {
+        info.setAttribute('open', '');
+      }
+    });
+  </script>
+</body>
+</html>
